@@ -713,6 +713,27 @@ pub fn vehicle_bodies(v: &VehicleInstance) -> Vec<omsi_sim::collision::Obb> {
     out
 }
 
+fn impact_zones(
+    bb: [f32; 6],
+    position: glam::DVec3,
+    heading: f64,
+    velocity: glam::DVec2,
+    mass: f32,
+    id: u64,
+) -> [omsi_sim::collision::Obb; 4] {
+    let [width, length, height, cx, cy, cz] = bb;
+    let part = |w, l, x, y| {
+        omsi_sim::collision::Obb::from_box([w, l, height, x, y, cz], position, heading)
+            .moving(velocity, mass, id)
+    };
+    [
+        part(width, length * 0.25, cx, cy + length * 0.375),
+        part(width, length * 0.25, cx, cy - length * 0.375),
+        part(width * 0.5, length * 0.5, cx - width * 0.25, cy),
+        part(width * 0.5, length * 0.5, cx + width * 0.25, cy),
+    ]
+}
+
 /// Cruising speed of an AI aircraft where its flight path sets no limit (km/h): an
 /// airliner on its final approach.
 const AIRCRAFT_KMH: f32 = 280.0;
@@ -6822,8 +6843,8 @@ impl Traffic {
         true
     }
 
-    /// Obstacle boxes of all AI vehicles (for the player's collisions), with the rear
-    /// sections of articulated buses and the trailers.
+    /// Front, rear and side collision zones of AI vehicles (for the player's collisions),
+    /// including the rear sections of articulated buses and trailers.
     pub fn boxes(&self, near: DVec3, radius: f64) -> Vec<omsi_sim::collision::Obb> {
         self.cars
             .iter()
@@ -6835,24 +6856,58 @@ impl Traffic {
                     .def
                     .bounding_box
                     .unwrap_or([2.0, 4.5, 1.6, 0.0, 0.0, 0.8]);
-                // moving, and with a mass of its own: a car that runs into the bus is no
-                // bulldozer
-                let h = c.vehicle.heading.to_radians();
+                // Moving, and with a mass of its own: a car that runs into the bus is no
+                // bulldozer. Use the model heading so reversed vehicles and buses agree
+                // with their visible body and impact zones.
+                let h = c.vehicle.body_heading().to_radians();
                 let v = glam::DVec2::new(h.sin(), h.cos()) * c.state.speed as f64;
                 let (mass, id) = (c.vehicle.physics.mass_kg, c.id);
                 let rear = c.vehicle.trailers.iter().filter_map(move |t| {
                     t.ty.def.bounding_box.map(|bb| {
-                        omsi_sim::collision::Obb::from_box(bb, t.position, t.body_heading())
-                            .moving(v, mass, id)
+                        impact_zones(bb, t.position, t.body_heading(), v, mass, id)
                     })
                 });
-                std::iter::once(
-                    omsi_sim::collision::Obb::from_box(bb, c.vehicle.position, c.vehicle.body_heading())
-                        .moving(v, mass, id),
-                )
+                std::iter::once(impact_zones(
+                    bb,
+                    c.vehicle.position,
+                    c.vehicle.body_heading(),
+                    v,
+                    mass,
+                    id,
+                ))
                 .chain(rear)
+                .flatten()
             })
             .collect()
+    }
+
+    /// Deliver the player's moving-vehicle contacts to the AI cars so their collision
+    /// scripts and per-instance damage visuals respond to the same impact.
+    pub fn player_impacts(&mut self, impacts: Vec<omsi_sim::vehicle::DynamicImpact>) {
+        for impact in impacts {
+            let Some(id) = impact
+                .obstacle_id
+                .checked_neg()
+                .and_then(|id| id.checked_sub(2))
+                .and_then(|id| u64::try_from(id).ok())
+            else {
+                continue;
+            };
+            let Some(car) = self.cars.iter_mut().find(|car| car.id == id) else {
+                continue;
+            };
+            car.body.collision_impulse(
+                impact.push.truncate(),
+                impact.speed,
+                impact.energy,
+                car.vehicle.physics.mass_kg,
+            );
+            let inverse = car.vehicle.body_rotation().inverse();
+            let point = inverse.transform_point3((impact.point - car.vehicle.position).as_vec3());
+            let push = inverse.transform_vector3(impact.push.as_vec3());
+            car.vehicle
+                .receive_dynamic_impact(point, push, impact.speed, impact.energy);
+        }
     }
 
     /// Position and heading of a car by id (None once it is gone).
@@ -7243,6 +7298,7 @@ impl Traffic {
             }
             crate::scene::sync_vehicle_textures(renderer, scene, &mut c.vehicle, &c.render, &mut budget);
             crate::scene::sync_vehicle_materials(renderer, scene, &c.vehicle, &mut c.render);
+            crate::scene::sync_vehicle_damage(renderer, scene, &mut c.vehicle, &mut c.render);
             // a coupled part runs no scripts of its own: its plates, its displays and its
             // switched materials follow the leading vehicle's, as the player's own rear
             // sections do (without this an AI bus's rear section kept the blank textures and
@@ -7355,6 +7411,28 @@ fn parked_lane_clear(
 #[cfg(test)]
 mod parked_lane_tests {
     use super::*;
+
+    #[test]
+    fn vehicle_impact_zones_cover_the_whole_body_with_distinct_front_rear_and_sides() {
+        let bb = [2.0, 4.0, 2.0, 0.3, 0.7, 1.0];
+        let zones = impact_zones(bb, DVec3::ZERO, 0.0, DVec2::ZERO, 1200.0, 42);
+        let samples = [
+            DVec2::new(0.3, 2.55),
+            DVec2::new(0.3, -1.15),
+            DVec2::new(-0.45, 0.7),
+            DVec2::new(1.05, 0.7),
+        ];
+        for point in samples {
+            let probe = omsi_sim::collision::Obb::point(
+                DVec3::new(point.x, point.y, 1.0),
+                0.02,
+            );
+            assert!(zones.iter().any(|zone| zone.overlaps(&probe)), "{point:?}");
+        }
+        assert!(zones.iter().all(|zone| zone.id == -44));
+        assert!(zones[0].center.y > zones[1].center.y);
+        assert!(zones[2].center.x < zones[3].center.x);
+    }
 
     #[test]
     fn a_parked_body_blocks_an_otherwise_empty_target_lane() {

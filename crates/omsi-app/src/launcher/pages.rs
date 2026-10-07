@@ -640,6 +640,28 @@ fn driving_tab(ui: &mut Ui, s: &mut Value, dirty: &mut f32, out: &mut Outside, c
         s["mouse_sens"] = json!((ms * 100.0).round() / 100.0);
         *dirty = 0.3;
     }
+    let mut mouse_pedal = get(s, "mouse_pedal_strength")
+        .as_f64()
+        .unwrap_or(1.0) as f32;
+    if ui.slider(
+        "s-mouse-pedal",
+        c.row(),
+        &mut mouse_pedal,
+        0.5,
+        2.0,
+        0.05,
+        "Mouse pedal strength",
+        &|v| {
+            if (v - 1.0).abs() < 0.01 {
+                "OMSI".to_string()
+            } else {
+                format!("{:.0}%", v * 100.0)
+            }
+        },
+    ) {
+        s["mouse_pedal_strength"] = json!((mouse_pedal * 100.0).round() / 100.0);
+        *dirty = 0.3;
+    }
     toggle_setting(ui, s, dirty, c.row(), "Smooth mouse steering (off: the wheel follows the cursor at once, as in OMSI)", "mouse_smooth");
     toggle_setting(ui, s, dirty, c.row(), "A right click ends the mouse steering (as in OMSI)", "mouse_right_off");
     toggle_setting(ui, s, dirty, c.row(), "Indicators cancel themselves (as the bus's script does)", "blinker_cancel");
