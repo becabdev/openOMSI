@@ -915,6 +915,10 @@ pub struct AiFrame {
     /// something in its way that is to be warned - the stock ambulance's script sounds its
     /// siren for the next 30 m on it.
     pub priority_warning: bool,
+    /// `AI_Engine` -1: a timetable bus standing at a stop for its departure with time to
+    /// spare switches its engine off (the stock AI scripts: engine off, parking brake on),
+    /// and on again 20 s before it leaves (Omsi.exe 0x7d9128).
+    pub engine_off: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2296,7 +2300,9 @@ impl VehicleInstance {
     /// Run one of the engine's service triggers with `secs` on the clock: OMSI holds
     /// `veh_tank` / `veh_wash` down while the pump or the wash runs and the bus script
     /// decides what a second of it is worth (the SD202 takes 3 litres and caps at 250).
-    fn service(&mut self, name: &str, secs: f32) -> bool {
+    /// One step of a depot service: its trigger (`veh_tank`, `veh_wash`) with `secs` of
+    /// the script's clock. False when the bus has no such handling.
+    pub fn service(&mut self, name: &str, secs: f32) -> bool {
         let keep = self.host.clock.timegap;
         self.host.clock.timegap = secs;
         let ok = self.trigger(name);
@@ -2724,7 +2730,7 @@ impl VehicleInstance {
             // (the engine's field +0x638: an AI bus lights its saloon when it drives with
             // its lights on - the LiAZ's `lights_AI` switches both saloon circuits on it)
             ("AI_Interiorlight", ai.lights as i32 as f32),
-            ("AI_Engine", 1.0),
+            ("AI_Engine", if ai.engine_off { -1.0 } else { 1.0 }),
             ("AI_Scheduled_AtStation", station),
             // Which side's doors: OMSI hands the stop's side to the script, and a vehicle
             // with doors on both sides opens only the platform's (the BRT stops in

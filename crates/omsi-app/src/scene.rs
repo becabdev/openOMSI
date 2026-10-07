@@ -1861,7 +1861,9 @@ fn terrain_ground(src: &MeshData, slots: &[usize], pos: DVec3, xf: Mat4, origin:
 /// name - and if so how much it gives to the wind. Not a `[tree]` (its cards have their
 /// own) and not a backdrop (a forest painted on one wide card).
 fn vegetation_give_of(sco: &omsi_scenery::sco::SceneryObject) -> Option<f32> {
-    const GROUP_WORDS: [&str; 18] = ["tree", "baum", "bäume", "baeume", "deciduous", "conifer", "shrub", "bush", "busch", "strauch", "hecke", "hedge", "plant", "pflanz", "arbor", "vegetation", "forest", "wald"];
+    // (not "wald": a whole DLC's objects are grouped as "Thüringer Wald", and its houses'
+    // cut-out windows and railings swayed in the wind, #1775)
+    const GROUP_WORDS: [&str; 17] = ["tree", "baum", "bäume", "baeume", "deciduous", "conifer", "shrub", "bush", "busch", "strauch", "hecke", "hedge", "plant", "pflanz", "arbor", "vegetation", "forest"];
     const NAME_WORDS: [&str; 15] = ["tree", "trees", "baum", "shrub", "shrubbery", "bush", "busch", "strauch", "hecke", "hedge", "arbor", "chestnut", "kastanie", "palm", "plant"];
     if sco.tree.is_some() {
         return None;
@@ -6406,6 +6408,10 @@ impl World {
                 let mut extra = material_extra(&slot_ov, env_mask, bump, specular);
                 extra.ambient = Some(ambient);
                 extra.no_map_lights = ot.sco.no_map_lighting;
+                // a route arrow ([helparrow]) is a guide over the world, not a light in it:
+                // left out of the Enhanced picture's glow as the bus's own screens are (its
+                // self-lit yellow bloomed like a lamp at night, #1615)
+                extra.screen |= ot.sco.is_help_arrow;
                 // windy trees: a plant's leaves (its cut-out or blended slots) bend in the wind
                 if alpha != AlphaMode::Opaque {
                     if let Some(give) = vegetation_give_of(&ot.sco) {
@@ -7308,6 +7314,9 @@ impl World {
                         Vec::new();
                     let mut lamp_texts: Vec<(TextureId, omsi_sim::texttex::TextTextureState)> =
                         Vec::new();
+                    // The materials this placement's own `[texttexture]`s made: (slot, is item, material),
+                    // to keep them on a `[matl_change]` slot (see below).
+                    let mut text_slot_mats: Vec<(usize, bool, MaterialId)> = Vec::new();
                     // `[htmltexture]` pages shown on this object: (script texture index, texture)
                     let mut html_pages: Vec<(usize, TextureId)> = Vec::new();
                     let mut html_mats: HashMap<usize, MaterialId> = HashMap::new();
@@ -7436,6 +7445,19 @@ impl World {
                                 xf,
                                 mats.clone()
                             ));
+                            // What stands on a surface object casts its shadow: a `[shadow]`
+                            // mesh, or (casters "all") one rising more than 1.5 m over the
+                            // object's foot. Drawn as a ground layer it cast none - the
+                            // Spandau depot's buildings, made one object with its yard,
+                            // threw no shadow at all (#1503).
+                            if surface && !ot.mesh_shadow.get(mi).copied().unwrap_or(false) {
+                                let tagged = ot.mesh_casts.get(mi).copied().unwrap_or(false);
+                                let tall = ot.meshes.get(mi).is_some_and(|(m, _, _)| m.positions.iter().any(|p| p.z > 1.5));
+                                if tagged || tall {
+                                    renderer.set_casts_shadow(scene, i, true);
+                                    renderer.set_omsi_caster(scene, i, tagged);
+                                }
+                            }
                             i
                         } else {
                             let i = instance!(renderer.add_instance(scene, *mesh_id, pos, xf, mats.clone()));
@@ -7569,6 +7591,7 @@ impl World {
                                         let mat = gpu.material(renderer, scene, mat);
                                         tg.textures.push(tex);
                                         tg.materials.push(mat);
+                                        text_slot_mats.push((slot, o.item, mat));
                                         renderer.set_material(scene, inst, slot, mat);
                                         if lamp.is_none() {
                                             script_texts.push((tex, state));
@@ -7592,6 +7615,7 @@ impl World {
                                         e.2 += 1;
                                         let mat = e.1;
                                         tg.texts.push(key);
+                                        text_slot_mats.push((slot, o.item, mat));
                                         renderer.set_material(scene, inst, slot, mat);
                                         continue;
                                     }
@@ -7612,8 +7636,21 @@ impl World {
                                     let mat = gpu.material(renderer, scene, mat);
                                     gpu.text_textures.insert(key.clone(), (tex, mat, 1));
                                     tg.texts.push(key);
+                                    text_slot_mats.push((slot, o.item, mat));
                                     renderer.set_material(scene, inst, slot, mat);
                                 }
+                            }
+                        }
+                        // A slot a `[matl_change]` switches keeps the material this
+                        // placement's own `[texttexture]` drew it with: the switch puts the
+                        // type's plain materials back every frame (`update_scripted`), and a
+                        // bus stop sign's route numbers went blank with them (#1756).
+                        for v in object_variants.iter_mut().filter(|v| v.0 == inst) {
+                            if let Some(&(_, _, m)) = text_slot_mats.iter().rev().find(|(s, it, _)| *s == v.1 && *it) {
+                                v.3 = m;
+                            }
+                            if let Some(&(_, _, m)) = text_slot_mats.iter().rev().find(|(s, it, _)| *s == v.1 && !*it) {
+                                v.2 = m;
                             }
                         }
                         // [htmltexture] + [useHtmlTexture]: a page drawn onto the slot; the
@@ -11830,11 +11867,14 @@ impl Look {
             let mut extra = l.extra;
             extra.display = text_is_display(l.lightmap.is_some(), l.night.is_some());
             extra.screen = true;
+            // (the slot's own emissive stays: a text field made self-lit in its .x - the
+            // emissive colour 1, 1, 1 - shines as OMSI shows it, the New Lion's City's
+            // number plate and setvar screen; it was taken away, #1384)
             return Look {
                 diffuse: Some(t),
                 alpha: AlphaMode::Blend,
                 color: [1.0; 4],
-                emissive: [0.0; 3],
+                emissive: l.emissive,
                 unlit: false,
                 transmap: None,
                 envmap: None,
@@ -13815,6 +13855,13 @@ fn object_lanes(
 /// Resolve the texture name for a scenery object's `[matl_freetex]` slot.
 /// Tries the object's script variable first, then freetex probe, and falls back to
 /// tile placement strings (by explicit numeric index or by freetex declaration order).
+///
+/// The object's own string variable owns the slot: when its `[stringvarnamelist]` (or a
+/// script) declares `var`, its value is the file name and an empty value means the slot
+/// has none - the object's own texture stays, as in Omsi.exe. Reading the placement
+/// strings of another variable instead put a bus stop sign's route number (`72`, `A47X`)
+/// or a stop name in a `[matl_freetex]` slot, which Omsi.exe never does; those are the
+/// `[texttexture]` sizes of the sign, not files (#1756).
 pub(crate) fn resolve_scenery_freetex_name<'a>(
     var: &str,
     override_: &MaterialDef,
@@ -13825,14 +13872,19 @@ pub(crate) fn resolve_scenery_freetex_name<'a>(
 ) -> Option<&'a str> {
     let script_name = object_script.map(|s| s.str_var(var).trim()).unwrap_or("");
     let probe_name = freetex_probe.map(|p| p.str_var(var).trim()).unwrap_or("");
+    let declared = object_script.map(|s| s.program.str_var(var).is_some()).unwrap_or(false)
+        || freetex_probe.map(|p| p.program.str_var(var).is_some()).unwrap_or(false);
+    if declared {
+        // a name a script sets in {frame} is only in the probe's state at first (see the
+        // caller), so both are read; neither having one leaves the slot's own texture
+        let name = if !script_name.is_empty() { script_name } else { probe_name };
+        let name = name.trim_matches('"');
+        return (!name.is_empty()).then_some(name);
+    }
     let string_by_idx = var.parse::<usize>().ok().and_then(|idx| strings.get(idx)).map(|s| s.trim()).unwrap_or("");
     let freetex_idx = overrides.iter().filter(|o| !o.item && o.freetex.is_some()).position(|o| std::ptr::eq(o, override_)).unwrap_or(0);
     let string_by_order = strings.get(freetex_idx).map(|s| s.trim()).unwrap_or("");
-    let name = if !script_name.is_empty() {
-        script_name
-    } else if !probe_name.is_empty() {
-        probe_name
-    } else if !string_by_idx.is_empty() {
+    let name = if !string_by_idx.is_empty() {
         string_by_idx
     } else if !string_by_order.is_empty() {
         string_by_order
@@ -14270,6 +14322,16 @@ mod tests {
             assert!((at(0, x, 1) - expect(x)).abs() <= 1.0, "row {x}");
         }
         assert!((0..n * n).all(|i| own.rgba[i * 4 + 2] == 0));
+    }
+
+    /// A DLC's buildings grouped as "Thüringer Wald" are no plants; trees and hedges are
+    /// (#1775).
+    #[test]
+    fn a_forest_named_map_is_no_plant() {
+        let sco = |text: &str| SceneryObject::parse(&omsi_cfg::CfgFile::from_str("haus.sco", text));
+        assert!(vegetation_give_of(&sco("[groups]\n2\nThüringer Wald\nGebäude\n[mesh]\nhaus.o3d\n")).is_none());
+        assert!(vegetation_give_of(&sco("[groups]\n2\nThüringer Wald\nBäume\n[mesh]\nbaum.o3d\n")).is_some());
+        assert!(vegetation_give_of(&sco("[groups]\n1\nHedges\n[mesh]\nh.o3d\n")).is_some());
     }
 
     /// A bus bay's lines made as a plain object (NCCR's `Parkbox(bus).sco`: a flat mesh 5 mm
@@ -15062,6 +15124,28 @@ mod material_tests {
         // 4. Returns None when no matching string exists
         let name_empty = resolve_scenery_freetex_name("Missing", &ov1, &overrides, None, None, &[]);
         assert_eq!(name_empty, None);
+
+        // 5. A string variable the object declares owns the slot: an empty one means the
+        //    slot has no picture of its own, never another variable's placement string.
+        //    (A bus stop sign's route number stood in a `[matl_freetex]` slot this way,
+        //    #1756.)
+        let mut prog2 = omsi_script::Program::default();
+        prog2.declare_str_var("Textur");
+        let empty_script = omsi_sim::scenery::SceneryInstance::new(
+            Arc::new(prog2),
+            &[],
+            omsi_sim::SimClock::default(),
+            &[String::new()],
+        );
+        assert_eq!(
+            resolve_scenery_freetex_name("Textur", &ov1, &overrides, Some(&empty_script), None, &strings),
+            None
+        );
+        // a variable the object does not declare keeps the positional fallback
+        assert_eq!(
+            resolve_scenery_freetex_name("Textur2", &ov1, &overrides, Some(&empty_script), None, &strings),
+            Some("zero.bmp")
+        );
     }
 }
 

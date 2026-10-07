@@ -108,6 +108,10 @@ pub(crate) struct Args {
     /// Run the timetable: scheduled AI buses from the map's TTData (needs --traffic > 0 or this).
     #[arg(long)]
     pub(crate) schedule: bool,
+    /// With --schedule: the timetable for the player's own duty only, no timetable AI
+    /// buses (the launcher's "Disable timetable buses" with a line chosen).
+    #[arg(long)]
+    pub(crate) no_timetable_buses: bool,
     /// Date at start, YYYY-MM-DD (default 1989-05-30).
     #[arg(long)]
     pub(crate) date: Option<String>,
@@ -207,6 +211,10 @@ pub(crate) struct Args {
     /// launcher's "Automatic") instead of `--entry`.
     #[arg(long)]
     pub(crate) auto_entry: bool,
+    /// With a duty: the clock stays at `--time` however late its first trip leaves (the
+    /// launcher's start at the real time).
+    #[arg(long)]
+    pub(crate) keep_time: bool,
     /// OMSI's tutorial 1..4 (its situation, and its pages beside the picture).
     #[arg(long)]
     pub(crate) tutorial: Option<usize>,
