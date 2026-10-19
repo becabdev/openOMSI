@@ -2,7 +2,7 @@
 # Build openOMSI for macOS (the Mac it runs on: Apple silicon or Intel) and pack it as
 # dist/macos/openOMSI.app. The game binary is the bundle's executable; started with no
 # arguments it opens the launcher window. Needs Rust (https://rustup.rs) and the Xcode
-# Command Line Tools (xcode-select --install).
+# Command Line Tools; the Intel ANGLE/CGL build also needs the full Xcode app.
 set -eu
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -10,6 +10,11 @@ export PATH="$HOME/.cargo/bin:$PATH"
 xcode-select -p >/dev/null 2>&1 || { echo "Run xcode-select --install, then run this script again." >&2; exit 1; }
 command -v cargo >/dev/null 2>&1 || { echo "Install Rust from https://rustup.rs, then run this script again." >&2; exit 1; }
 target="${OPENOMSI_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
+if [ "$target" = x86_64-apple-darwin ] && ! xcodebuild -version >/dev/null 2>&1; then
+    echo "The Intel ANGLE/CGL build needs the full Xcode app, selected with xcode-select (Command Line Tools alone are insufficient)." >&2
+    echo "Install Xcode, then select it as the active developer directory and rerun this script." >&2
+    exit 1
+fi
 version="${OPENOMSI_VERSION:-$(sh scripts/version.sh 2>/dev/null || echo 0.0.0)}"
 export OPENOMSI_VERSION="$version"
 cargo build --locked --release --target "$target" -p omsi-app -p omsi-launcher-core
@@ -21,6 +26,14 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "target/$target/release/openomsi" "$app/Contents/MacOS/openomsi"
 cp "target/$target/release/openomsi-launcher" "$app/Contents/MacOS/openomsi-launcher"
 cp "assets/steam_redist/libsteam_api.dylib" "$app/Contents/MacOS/"
+if [ "$target" = x86_64-apple-darwin ]; then
+    angle_out=$(sh scripts/build-angle-macos.sh)
+    cp "$angle_out/libEGL.dylib" "$angle_out/libGLESv2.dylib" "$app/Contents/MacOS/"
+    angle_source=$(CDPATH= cd -- "$angle_out/../.." && pwd)
+    cp "$angle_source/LICENSE" "$app/Contents/Resources/LICENSE-ANGLE.txt"
+    mv "$app/Contents/MacOS/openomsi" "$app/Contents/MacOS/openomsi-bin"
+    clang -arch x86_64 -mmacosx-version-min=11.0 -o "$app/Contents/MacOS/openomsi" scripts/macos/openomsi-cgl-launcher.c
+fi
 # the desktop launcher (launcher/, Tauri on WebKit), stamped with the release version (its
 # About window and the Info.plist inside it said tauri.conf.json's)
 TAURI_CONFIG="{\"version\":\"${version%%-*}\"}" cargo build --locked --release --target "$target" --manifest-path launcher/src-tauri/Cargo.toml

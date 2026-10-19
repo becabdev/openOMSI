@@ -295,7 +295,12 @@ pub(crate) fn backend_order() -> Vec<GraphicsApi> {
         return vec![GraphicsApi::Native(wgpu::Backends::METAL)];
     }
     if cfg!(target_os = "macos") {
-        return vec![GraphicsApi::Native(wgpu::Backends::METAL), GraphicsApi::Native(wgpu::Backends::GL)];
+        let gl_first = omsi_cfg::flags::OMSI_BACKEND.var().is_some_and(|v| matches!(v.to_ascii_lowercase().as_str(), "gl" | "opengl"));
+        let mut order = vec![GraphicsApi::Native(wgpu::Backends::METAL), GraphicsApi::Native(wgpu::Backends::GL)];
+        if gl_first {
+            order.reverse();
+        }
+        return order;
     }
     let settings = crate::settings::Settings::load();
     let wanted = if settings.vr_requested() {
@@ -337,6 +342,12 @@ fn backend_instance(api: GraphicsApi) -> wgpu::Instance {
     let mut d = wgpu::InstanceDescriptor::new_without_display_handle();
     d.backend_options.gl.context_lock_timeout = Some(GL_CONTEXT_LOCK_TIMEOUT);
     d.backends = api.backends();
+    if cfg!(target_os = "macos") && api.backends() == wgpu::Backends::GL {
+        d.backend_options.gl.angle.library_directory = std::env::current_exe()
+            .ok()
+            .and_then(|path| path.parent().map(|dir| dir.to_string_lossy().into_owned()));
+        return omsi_render::angle::instance(d);
+    }
     if api == GraphicsApi::Angle {
         return omsi_render::angle::instance(d);
     }
@@ -543,6 +554,7 @@ impl RendererStart {
         loop {
             match built {
                 Ok(r) => {
+                    log::info!("graphics: opened {} for gameplay", self.what);
                     if !self.opener.failures.is_empty() {
                         log::warn!("graphics: drawing on {}; before it {}", self.what, self.opener.failures.join("; "));
                     }

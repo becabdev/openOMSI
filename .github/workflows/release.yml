@@ -216,16 +216,17 @@ jobs:
   macos:
     needs: version
     if: ${{ !inputs.only || inputs.only == 'all' || inputs.only == 'macos' }}
-    timeout-minutes: 90
-    runs-on: macos-latest
+    timeout-minutes: 120
+    runs-on: ${{ matrix.arch == 'x64' && 'macos-15-intel' || 'macos-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        # Intel Macs: built on the Apple silicon runner for x86_64
-        arch: ${{ fromJSON(github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci:all-platforms') && '["arm64"]' || '["arm64", "x64"]') }}
+        #build and exercise the clg fallback on an intel runner
+        arch: ${{ fromJSON('["arm64", "x64"]') }}
     env:
       OPENOMSI_VERSION: ${{ needs.version.outputs.version }}
       OPENOMSI_TARGET: ${{ matrix.arch == 'x64' && 'x86_64-apple-darwin' || 'aarch64-apple-darwin' }}
+      OPENOMSI_ANGLE_BUILD_ROOT: ${{ runner.temp }}/openomsi-angle
       MACOSX_DEPLOYMENT_TARGET: '11.0'
     steps:
       - uses: actions/checkout@v7
@@ -241,6 +242,14 @@ jobs:
             launcher/src-tauri -> target
       - name: Build
         run: scripts/build-macos.sh
+      - name: ANGLE/CGL renderer regression
+        if: matrix.arch == 'x64'
+        env:
+          ANGLE_DEFAULT_PLATFORM: gl
+          ANGLE_TEST_LIBRARY_DIRECTORY: ${{ github.workspace }}/dist/macos/openOMSI.app/Contents/MacOS
+        run: |
+          export DYLD_LIBRARY_PATH="$ANGLE_TEST_LIBRARY_DIRECTORY${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+          cargo test --locked --release --target "$OPENOMSI_TARGET" -p omsi-render --test angle_macos -- --ignored --nocapture
       - name: Package
         run: |
           mkdir -p out

@@ -465,6 +465,7 @@ are next to `openomsi.exe`; without them it is skipped (the log says so). The Wi
 package ships them, built from ANGLE's own source by
 [angle-openomsi](https://github.com/openOMSI-org/angle-openomsi) (there is no ARM64 build);
 with them the log names the adapter `ANGLE (…Direct3D11…)` on the `Gl` backend.
+On an intel macintosh the desktop bundle contains angle built with cgl/ogl and without metal or vulkan OMSI_BACKEND=gl tries it before metal for diagnosis the game log records graphics: opened (Gl) for gameplay once the renderer is ready. The OpenGL driver must still support the game required features
 
 `drive_keys` is a control preset: `simple` (W/S/A/D and Up/Down drive, Left/Right keep
 OMSI's interior camera switch; the default), `wasd` (W/S/A/D only), `arrows` (the four arrow
