@@ -282,8 +282,8 @@ fn angle_available() -> bool {
     })
 }
 
-/// The graphics interfaces in the order they are tried: Metal on a Mac, an iPhone and an
-/// iPad; on Windows DirectX
+/// The graphics interfaces in the order they are tried: Metal then opengl fallback on a mac
+/// (older macs patched or no by oclp or hackintoshes may not have metal ), metal on iPhone or iPad; on Windows DirectX
 /// 12 first (the Windows drivers' best-kept path: on Vulkan they reset the device -
 /// "the graphics device was lost" - far more often), then Vulkan, then OpenGL for a card
 /// without either (a GeForce GT 530), then OpenGL ES on ANGLE over DirectX 11 when its DLLs
@@ -291,8 +291,11 @@ fn angle_available() -> bool {
 /// OMSI_BACKEND=vulkan|dx12|gl|angle puts one first: a driver whose Vulkan misbehaves is
 /// got round.
 pub(crate) fn backend_order() -> Vec<GraphicsApi> {
-    if cfg!(any(target_os = "macos", target_os = "ios")) {
+    if cfg!(target_os = "ios") {
         return vec![GraphicsApi::Native(wgpu::Backends::METAL)];
+    }
+    if cfg!(target_os = "macos") {
+        return vec![GraphicsApi::Native(wgpu::Backends::METAL), GraphicsApi::Native(wgpu::Backends::GL)];
     }
     let settings = crate::settings::Settings::load();
     let wanted = if settings.vr_requested() {
@@ -851,6 +854,19 @@ mod own_key_tests {
 #[cfg(test)]
 mod window_tests {
     use super::software_adapter;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_tries_opengl_after_metal() {
+        use super::GraphicsApi;
+        assert_eq!(
+            super::backend_order(),
+            vec![
+                GraphicsApi::Native(wgpu::Backends::METAL),
+                GraphicsApi::Native(wgpu::Backends::GL),
+            ]
+        );
+    }
 
     /// The software renderers come after every graphics chip (#770).
     #[test]

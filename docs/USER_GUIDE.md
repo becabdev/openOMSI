@@ -444,7 +444,8 @@ pace it is designed at), `collision_objects` (walls, poles and bridges stop the 
 option and is taken from OMSI's options when openOMSI starts the first time), `graphics_api`
 (`auto`, `vulkan`, `dx12` on Windows, `gl`, `angle` on Windows: which graphics interface the
 game asks first - with `auto` on Windows DirectX 12, then Vulkan, then OpenGL, then ANGLE;
-on Linux and Android Vulkan, then OpenGL; a Mac, iPhone and iPad always use Metal; see
+on Linux and Android Vulkan, then OpenGL; a Mac triyes metal then opengl (fixed by @becabdev), while an iPhone
+and iPad use Metal; see
 *Graphics API* below), `ctrl_off` (game controllers switched off on the Controls page, by
 name, separated by `|`) and `language` (the language of the interface - `ENG`, `DEU`, `FRA`,
 `RUS` and the others Settings → General lists; OMSI's own texts, such as the names of cockpit
