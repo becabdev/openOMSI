@@ -39,7 +39,7 @@ if [ "$target" = x86_64-apple-darwin ]; then
     fi
     for lib in libEGL.dylib libGLESv2.dylib; do
         [ -s "$angle_out/$lib" ] || { echo "Missing ANGLE library: $angle_out/$lib" >&2; exit 1; }
-        lipo -verify_arch x86_64 "$angle_out/$lib"
+        lipo "$angle_out/$lib" -verify_arch x86_64
     done
     [ -s "$angle_license" ] || { echo "Missing ANGLE license: $angle_license" >&2; exit 1; }
     cp "$angle_out/libEGL.dylib" "$angle_out/libGLESv2.dylib" "$app/Contents/MacOS/"

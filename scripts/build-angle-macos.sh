@@ -34,6 +34,6 @@ out="$src/out/openomsi-cgl-x64"
 
 for lib in libEGL.dylib libGLESv2.dylib; do
     [ -s "$out/$lib" ] || { echo "ANGLE did not build $lib" >&2; exit 1; }
-    lipo -verify_arch x86_64 "$out/$lib" >&2
+    lipo "$out/$lib" -verify_arch x86_64 >&2
 done
 printf '%s\n' "$out"
