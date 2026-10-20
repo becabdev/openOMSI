@@ -39,6 +39,8 @@ fn angle_cgl_renders_a_frame() {
     ))
     .expect("game renderer on ANGLE/CGL");
     let mut scene = renderer.new_scene();
+    scene.rainfall.rate = 0.1;
+    scene.rainfall.drop_mm = 2.0;
     let pixels = renderer
         .render_to_image(
             &mut scene,
