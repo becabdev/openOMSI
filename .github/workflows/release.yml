@@ -264,6 +264,16 @@ jobs:
         env:
           OPENOMSI_ANGLE_ARTIFACT_DIR: ${{ runner.temp }}/openomsi-angle-libs
         run: scripts/build-macos.sh
+      - name: Rain and snow roof occlusion
+        env:
+          OPENOMSI_ROOF_TEST_BACKEND: ${{ matrix.arch == 'x64' && 'angle' || 'metal' }}
+          ANGLE_TEST_LIBRARY_DIRECTORY: ${{ github.workspace }}/dist/macos/openOMSI.app/Contents/MacOS
+        run: |
+          if [ "$OPENOMSI_ROOF_TEST_BACKEND" = angle ]; then
+            unset ANGLE_DEFAULT_PLATFORM
+            export DYLD_LIBRARY_PATH="$ANGLE_TEST_LIBRARY_DIRECTORY${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+          fi
+          cargo test --locked --release --target "$OPENOMSI_TARGET" -p omsi-render --lib roof_occlusion_gpu -- --ignored --nocapture
       - name: ANGLE/CGL renderer regression
         if: matrix.arch == 'x64'
         env:

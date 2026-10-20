@@ -27,6 +27,8 @@ pub(crate) fn precip_matrix(cam_rel: Vec3) -> Mat4 {
 pub(crate) struct PrecipMap {
     pub(crate) depth_view: wgpu::TextureView,
     pub(crate) color_view: wgpu::TextureView,
+    #[cfg(test)]
+    color_texture: wgpu::Texture,
     pub(crate) camera_buf: wgpu::Buffer,
     pub(crate) matrix: std::cell::Cell<Option<Mat4>>,
 }
@@ -50,7 +52,7 @@ impl PrecipMap {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let camera_buf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -62,6 +64,8 @@ impl PrecipMap {
         PrecipMap {
             depth_view: depth.create_view(&Default::default()),
             color_view: color.create_view(&Default::default()),
+            #[cfg(test)]
+            color_texture: color,
             camera_buf,
             matrix: std::cell::Cell::new(None),
         }
@@ -142,3 +146,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "precip_roof_gpu.rs"]
+mod gpu_tests;
