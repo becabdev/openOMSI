@@ -51,7 +51,7 @@ mod tests {
     /// lacquer, the draw order's depth step of a surface lying on another of its object, and a
     /// livery's tint above the alpha test, the painted lines' pull and the wet paint's water film, and the player's vehicle
     /// standing between other vehicles' lamps and what lies behind it, and clear vehicle
-    /// lamps taking coverage from their active night map).
+    /// lamps taking coverage from their active night map, and #3019's larger rain caps).
     /// (with Unix line ends: a Windows checkout may turn the parts' into CRLF, as it did the
     /// single files', and the 0.2.31 release's Windows test failed on that alone)
     #[test]
