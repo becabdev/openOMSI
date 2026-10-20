@@ -34,7 +34,7 @@ int main(int argc, char **argv) {
     if (before && *before) snprintf(libraries, env_size, "%s:%s", path, before);
     else snprintf(libraries, env_size, "%s", path);
     if (setenv("DYLD_LIBRARY_PATH", libraries, 1) != 0 ||
-        setenv("ANGLE_DEFAULT_PLATFORM", "gl", 1) != 0) {
+        unsetenv("ANGLE_DEFAULT_PLATFORM") != 0) {
         perror("openOMSI: graphics environment");
         return 1;
     }

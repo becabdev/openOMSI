@@ -343,9 +343,7 @@ fn backend_instance(api: GraphicsApi) -> wgpu::Instance {
     d.backend_options.gl.context_lock_timeout = Some(GL_CONTEXT_LOCK_TIMEOUT);
     d.backends = api.backends();
     if cfg!(target_os = "macos") && api.backends() == wgpu::Backends::GL {
-        d.backend_options.gl.angle.library_directory = std::env::current_exe()
-            .ok()
-            .and_then(|path| path.parent().map(|dir| dir.to_string_lossy().into_owned()));
+        // The macOS EGL loader uses DYLD_LIBRARY_PATH set by the app bundle's C shim.
         return omsi_render::angle::instance(d);
     }
     if api == GraphicsApi::Angle {

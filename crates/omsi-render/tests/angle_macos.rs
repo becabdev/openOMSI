@@ -3,18 +3,31 @@
 #[test]
 #[ignore = "requires the bundled angle/cgl dylibs"]
 fn angle_cgl_renders_a_frame() {
+    let _ = env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("wgpu_core=debug,wgpu_hal::gles=debug"),
+    )
+    .is_test(true)
+    .try_init();
     let directory = std::env::var("ANGLE_TEST_LIBRARY_DIRECTORY").expect("ANGLE library directory");
     let directory = std::fs::canonicalize(directory).expect("ANGLE library directory exists");
     for name in ["libEGL.dylib", "libGLESv2.dylib"] {
         assert!(directory.join(name).is_file(), "missing {name}");
     }
-    assert_eq!(std::env::var("ANGLE_DEFAULT_PLATFORM").as_deref(), Ok("gl"));
+    assert!(
+        std::env::var_os("ANGLE_DEFAULT_PLATFORM").is_none(),
+        "ANGLE_DEFAULT_PLATFORM must be unset so ANGLE selects OpenGL/CGL on macOS"
+    );
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::GL;
-    descriptor.backend_options.gl.angle.library_directory = Some(directory.to_string_lossy().into_owned());
     let instance = omsi_render::angle::instance(descriptor);
     let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::GL));
-    let adapter = adapters.first().expect("ANGLE/CGL adapter");
+    let adapter = adapters.first().unwrap_or_else(|| {
+        panic!(
+            "no ANGLE/CGL adapter, check the wgpu/EGL initialization errors above (libraries: {}, DYLD_LIBRARY_PATH: {:?})",
+            directory.display(),
+            std::env::var_os("DYLD_LIBRARY_PATH")
+        )
+    });
     let info = adapter.get_info();
     eprintln!("ANGLE/CGL adapter: {info:?}");
     assert_eq!(info.backend, wgpu::Backend::Gl);

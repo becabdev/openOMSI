@@ -267,9 +267,9 @@ jobs:
       - name: ANGLE/CGL renderer regression
         if: matrix.arch == 'x64'
         env:
-          ANGLE_DEFAULT_PLATFORM: gl
           ANGLE_TEST_LIBRARY_DIRECTORY: ${{ github.workspace }}/dist/macos/openOMSI.app/Contents/MacOS
         run: |
+          unset ANGLE_DEFAULT_PLATFORM
           export DYLD_LIBRARY_PATH="$ANGLE_TEST_LIBRARY_DIRECTORY${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
           cargo test --locked --release --target "$OPENOMSI_TARGET" -p omsi-render --test angle_macos -- --ignored --nocapture
       - name: Package
