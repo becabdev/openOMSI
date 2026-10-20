@@ -27,10 +27,23 @@ cp "target/$target/release/openomsi" "$app/Contents/MacOS/openomsi"
 cp "target/$target/release/openomsi-launcher" "$app/Contents/MacOS/openomsi-launcher"
 cp "assets/steam_redist/libsteam_api.dylib" "$app/Contents/MacOS/"
 if [ "$target" = x86_64-apple-darwin ]; then
-    angle_out=$(sh scripts/build-angle-macos.sh)
+    # CI can reuse the pinned ANGLE/CGL libraries from a previous successful build.
+    # Local builds still compile them from source when no artifact directory is set.
+    if [ -n "${OPENOMSI_ANGLE_ARTIFACT_DIR:-}" ]; then
+        angle_out="$OPENOMSI_ANGLE_ARTIFACT_DIR"
+        angle_license="$angle_out/LICENSE-ANGLE.txt"
+    else
+        angle_out=$(sh scripts/build-angle-macos.sh)
+        angle_source=$(CDPATH= cd -- "$angle_out/../.." && pwd)
+        angle_license="$angle_source/LICENSE"
+    fi
+    for lib in libEGL.dylib libGLESv2.dylib; do
+        [ -s "$angle_out/$lib" ] || { echo "Missing ANGLE library: $angle_out/$lib" >&2; exit 1; }
+        lipo -verify_arch x86_64 "$angle_out/$lib"
+    done
+    [ -s "$angle_license" ] || { echo "Missing ANGLE license: $angle_license" >&2; exit 1; }
     cp "$angle_out/libEGL.dylib" "$angle_out/libGLESv2.dylib" "$app/Contents/MacOS/"
-    angle_source=$(CDPATH= cd -- "$angle_out/../.." && pwd)
-    cp "$angle_source/LICENSE" "$app/Contents/Resources/LICENSE-ANGLE.txt"
+    cp "$angle_license" "$app/Contents/Resources/LICENSE-ANGLE.txt"
     mv "$app/Contents/MacOS/openomsi" "$app/Contents/MacOS/openomsi-bin"
     clang -arch x86_64 -mmacosx-version-min=11.0 -o "$app/Contents/MacOS/openomsi" scripts/macos/openomsi-cgl-launcher.c
 fi
