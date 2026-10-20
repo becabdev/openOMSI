@@ -221,12 +221,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        #build and exercise the clg fallback on an intel runner
         arch: ${{ fromJSON('["arm64", "x64"]') }}
     env:
       OPENOMSI_VERSION: ${{ needs.version.outputs.version }}
       OPENOMSI_TARGET: ${{ matrix.arch == 'x64' && 'x86_64-apple-darwin' || 'aarch64-apple-darwin' }}
-      OPENOMSI_ANGLE_BUILD_ROOT: ${{ runner.temp }}/openomsi-angle
       MACOSX_DEPLOYMENT_TARGET: '11.0'
     steps:
       - uses: actions/checkout@v7
@@ -241,6 +239,8 @@ jobs:
             . -> target
             launcher/src-tauri -> target
       - name: Build
+        env:
+          OPENOMSI_ANGLE_BUILD_ROOT: ${{ runner.temp }}/openomsi-angle
         run: scripts/build-macos.sh
       - name: ANGLE/CGL renderer regression
         if: matrix.arch == 'x64'
