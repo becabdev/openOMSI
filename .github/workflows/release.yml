@@ -285,6 +285,13 @@ jobs:
           unset ANGLE_DEFAULT_PLATFORM
           export DYLD_LIBRARY_PATH="$ANGLE_TEST_LIBRARY_DIRECTORY${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
           cargo test --locked --release --target "$OPENOMSI_TARGET" -p omsi-render --test angle_macos -- --ignored --nocapture
+      - name: iPhone and iPad game library compiles
+        if: matrix.arch == 'arm64'
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: '18.0'
+        run: |
+          rustup target add aarch64-apple-ios
+          cargo check --locked -p omsi-app --lib --target aarch64-apple-ios
       - name: Package
         run: |
           mkdir -p out
