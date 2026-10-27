@@ -22,7 +22,8 @@ impl VehicleInstance {
             Some(t) => (t.ty.clone(), t.reversed),
             None => (self.ty.clone(), false),
         };
-        let t = TrailerPart::new_ex(
+        let adopted = self.adopt_trailer_trolley(&ty, self.trailers.len());
+        let mut t = TrailerPart::new_ex(
             ty,
             &lead_ty,
             lead_reversed,
@@ -31,6 +32,10 @@ impl VehicleInstance {
             first_axle,
             self.trailers.len(),
         );
+        if adopted {
+            let program = self.ty.program.clone();
+            t.animators = part_animators(&t.ty, &|n| program.var(n).or_else(|| self.var_index.get(&n.to_ascii_lowercase()).copied()));
+        }
         self.trailers.push(t);
     }
 }
@@ -591,6 +596,13 @@ impl TrailerPart {
         if hi - lo > 0.5 {
             return (hi, lo);
         }
+        // a bogie frame that names no coupling of its own (see `declared_coupling`) stands on the
+        // track by its own middle
+        if is_bogie_frame(&self.ty.def) {
+            // (its own wheelbase: the model's length, not the distance between its couplings)
+            let half = self.ty.model_box().map(|(lo, hi)| (hi.y - lo.y) * 0.5).unwrap_or(0.9).clamp(0.5, 3.0);
+            return (half, -half);
+        }
         let front = self.coupling_front.y * turn;
         (front, front - self.length.max(0.5))
     }
@@ -858,8 +870,11 @@ impl TrailerPart {
         // a car that reads its place in the train runs its own scripts first, and its
         // meshes show its values (see `car_run`)
         let place = self.place_in_train();
+        let (ahead, behind) = (&self.ty.def.control_cable_front, &self.ty.def.control_cable_back);
+        let plugs = if self.reversed { [behind.as_slice(), ahead.as_slice()] } else { [ahead.as_slice(), behind.as_slice()] };
+        let probe = main.height_probe_at(self.position, self.body_rotation());
         match self.run.as_deref_mut() {
-            Some(run) => run.frame(main, place),
+            Some(run) => run.frame(main, place, plugs, probe),
             None if self.runs_itself => {
                 let run = super::CarRun::start(&self.ty, main, place);
                 let slot_of = |n: &str| omsi_script::compile::with_lower(n, |k| run.names.get(k).copied());

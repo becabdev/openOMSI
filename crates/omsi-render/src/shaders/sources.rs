@@ -134,10 +134,10 @@ pub(crate) fn scene_shader_text(gl: bool) -> String {
     if !gl {
         return src;
     }
-    let clamped = |t: &str| {
+    let clamped = |t: &str, bias: &str| {
         format!(
-            "textureSample({t}, s_diffuse, clamp(uv, 0.5 / vec2<f32>(textureDimensions({t})), \
-             vec2<f32>(1.0) - 0.5 / vec2<f32>(textureDimensions({t}))))"
+            "textureSampleBias({t}, s_diffuse, clamp(uv, 0.5 / vec2<f32>(textureDimensions({t})), \
+             vec2<f32>(1.0) - 0.5 / vec2<f32>(textureDimensions({t}))), {bias})"
         )
     };
     // No SSAO and no ray tracing on OpenGL (camera.clouds.w stays 0, see `lighter_picture`):
@@ -145,12 +145,13 @@ pub(crate) fn scene_shader_text(gl: bool) -> String {
     // D3D compiler under ANGLE (fxc) recursed without end in CProgram::CheckAssertion_Group
     // and the game closed before its first frame (#197).
     let out = src
-        .replace("textureSample(t_trans, s_tile, uv)", &clamped("t_trans"))
-        .replace("textureSample(t_night, s_tile, uv)", &clamped("t_night"))
+        .replace("textureSampleBias(t_trans, s_tile, uv, bias)", &clamped("t_trans", "bias"))
+        .replace("textureSampleBias(t_night, s_tile, uv, camera.lod.x)", &clamped("t_night", "camera.lod.x"))
         .replace("ao = ao_at(in.clip.xy, in.world);", "ao = 1.0;")
+        .replace("let ag = ao_gi_at(in.clip.xy, in.world);", "let ag = vec4<f32>(1.0, 0.0, 0.0, 0.0);")
         .replace("rt_at(in.clip.xy, in.world)", "vec4<f32>(1.0, 0.0, -1.0, 0.0)");
-    debug_assert!(!out.contains("s_tile, uv)"));
-    debug_assert!(!out.contains("ao_at(in.") && !out.contains("rt_at(in."));
+    debug_assert!(!out.contains("s_tile, uv)") && !out.contains("s_tile, uv, "));
+    debug_assert!(!out.contains("ao_at(in.") && !out.contains("ao_gi_at(in.") && !out.contains("rt_at(in."));
     out
 }
 
@@ -163,6 +164,7 @@ pub(crate) fn scene_shader_text(gl: bool) -> String {
 pub(crate) fn lean_scene(src: String) -> String {
     let out = src
         .replace("irr = irr * lamp_shadow_at(li, p, n, thin);", "")
+        .replace("seen_light = seen_light + share * lamp_shadow_at(li, p, n, false);", "seen_light = seen_light + share;")
         .replace("ms = sun_shadow_soft(in.world, n, thin);", "ms = 1.0;")
         .replace("let sm = sun_shadow_soft(in.world, n, thin);", "let sm = 1.0;");
     debug_assert_eq!(out.matches("sun_shadow_soft(in.world").count(), 1);
@@ -199,6 +201,13 @@ pub(crate) fn lean_rain(src: String) -> String {
     src.replace(LAMPS, "")
 }
 
+pub(crate) fn roof_as_float(src: String) -> String {
+    const DECL: &str = "var roof_map: texture_depth_2d;";
+    const LOAD: &str = "return textureLoad(roof_map, t, 0); }";
+    debug_assert_eq!((src.matches(DECL).count(), src.matches(LOAD).count()), (1, 1));
+    src.replace(DECL, "var roof_map: texture_2d<f32>;").replace(LOAD, "return textureLoad(roof_map, t, 0).x; }")
+}
+
 pub(crate) fn precip_shader_source(own: &str) -> String {
     let src = [
         include_str!("../precip_common.wgsl"),
@@ -209,6 +218,7 @@ pub(crate) fn precip_shader_source(own: &str) -> String {
         include_str!("../lamp_air.wgsl"),
     ]
     .join("\n");
+    let src = if gl_backend() { roof_as_float(src) } else { src };
     if array_path().no_storage() {
         let src = src
             .replace("@group(0) @binding(3) var<storage, read> lights: array<PointLight>;", "fn lights_at(i: u32) -> PointLight { return PointLight(vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0)); }")

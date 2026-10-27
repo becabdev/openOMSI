@@ -71,24 +71,24 @@ pub(crate) fn game_status(text: &str) {
 /// # Safety
 /// `cmd` and `arg` are nul-terminated strings (or null); the reply is freed with
 /// `openomsi_bridge_free`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn openomsi_bridge(cmd: *const c_char, arg: *const c_char) -> *mut c_char {
-    let read = |p: *const c_char| if p.is_null() { String::new() } else { CStr::from_ptr(p).to_string_lossy().into_owned() };
+    let read = |p: *const c_char| if p.is_null() { String::new() } else { unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned() };
     let (cmd, arg) = (read(cmd), read(arg));
     let reply = match std::panic::catch_unwind(|| call(&cmd, &arg)) {
         Ok(Ok(v)) => json!({ "ok": true, "value": v }),
-        Ok(Err(e)) => json!({ "ok": false, "error": format!("{e:#}") }),
-        Err(_) => json!({ "ok": false, "error": format!("the launcher's `{cmd}` stopped on an error (see the log)") }),
+        Ok(Err(e)) => json!({ "ok": false, "error": omsi_ui::tr(&format!("{e:#}")) }),
+        Err(_) => json!({ "ok": false, "error": omsi_ui::tr("the launcher's `{cmd}` stopped on an error (see the log)").replace("{cmd}", &cmd) }),
     };
     CString::new(reply.to_string()).unwrap_or_default().into_raw()
 }
 
 /// # Safety
 /// `p` is a reply of `openomsi_bridge` (or null), freed once.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn openomsi_bridge_free(p: *mut c_char) {
     if !p.is_null() {
-        drop(CString::from_raw(p));
+        drop(unsafe { CString::from_raw(p) });
     }
 }
 
@@ -117,8 +117,7 @@ fn call(cmd: &str, arg: &str) -> anyhow::Result<Value> {
         }
         "tutorials" => Ok(json!(core::tutorials().into_iter().map(|(n, title, text)| json!({ "n": n, "title": title, "text": text })).collect::<Vec<_>>())),
         "graphics_presets" => {
-            let mode = a.get("mode").and_then(|v| v.as_str()).unwrap_or("vanilla_plus");
-            Ok(json!(core::graphics_presets_for(mode).iter().map(|(name, v)| json!({ "name": name, "values": v })).collect::<Vec<_>>()))
+            Ok(json!(core::graphics_presets().iter().map(|(name, v)| json!({ "name": name, "values": v })).collect::<Vec<_>>()))
         }
         "graphics_profiles" => Ok(json!(core::graphics_profiles())),
         "languages" => Ok(json!(core::LANGUAGES.iter().map(|l| json!({ "code": l.0, "name": l.1, "iso": l.2 })).collect::<Vec<_>>())),
@@ -233,7 +232,7 @@ fn snapshot(s: &mut State) -> Value {
         .map(|e| {
             let info = s.server_info.get(&e.address).map(|(_, r)| match r {
                 Ok(i) => json!({ "ok": true, "name": i.name, "motd": i.motd, "map": i.map, "players": i.players, "max_players": i.max_players, "version": i.version, "time": i.time, "weather": i.weather, "password": i.password, "vehicles": i.vehicles.len() }),
-                Err(e) => json!({ "ok": false, "error": e }),
+                Err(e) => json!({ "ok": false, "error": omsi_ui::tr(e) }),
             });
             json!({ "name": e.name, "address": e.address, "protocol": e.protocol, "info": info, "official": omsi_net::official::is_alias(&e.address) })
         })
@@ -262,7 +261,7 @@ fn snapshot(s: &mut State) -> Value {
         "real_time": s.real_time(),
         "config": { "root": s.config.root, "profile": s.config.profile, "game": s.config.game },
         "root_ok": root_ok,
-        "root_problem": if root_ok { String::new() } else { crate::launcher::state::root_problem(&s.config.root) },
+        "root_problem": if root_ok { String::new() } else { omsi_ui::tr(&crate::launcher::state::root_problem(&s.config.root)).into_owned() },
         "content_dir": core::content_dir().map(|p| p.to_string_lossy().to_string()),
         "data_dir": core::data_dir().to_string_lossy(),
         "profiles": s.profiles,
@@ -359,7 +358,7 @@ fn act(s: &mut State, a: &Value) -> anyhow::Result<Value> {
         }
         "tour" => {
             let num = st("tour");
-            let other_day = s.line().and_then(|l| l.tours.iter().find(|t| t.number == num)).filter(|t| !t.runs).and_then(|t| t.next_run.clone());
+            let other_day = s.line().and_then(|l| l.tour(&num)).filter(|t| !t.runs).and_then(|t| t.next_run.clone());
             // a tour of another day moves the date to the next day it runs (OMSI lists only
             // the day's tours)
             if let Some(n) = other_day {
@@ -423,6 +422,7 @@ fn act(s: &mut State, a: &Value) -> anyhow::Result<Value> {
                 "passengers" => s.choice.passengers = on,
                 "schedule" => s.choice.schedule = on,
                 "autostart" => s.choice.autostart = on,
+                "comfortable_cabin_on_start" => s.choice.comfortable_cabin_on_start = on,
                 "on_foot" => s.choice.on_foot = on,
                 other => anyhow::bail!("no such switch: {other}"),
             }
@@ -675,7 +675,7 @@ fn preview_thread(rx: std::sync::mpsc::Receiver<PreviewMsg>) {
                         Ok(r) => renderer = Some(r),
                         Err(e) => {
                             log::warn!("launcher preview: no renderer: {e:#}");
-                            preview_state(false, Some(format!("No graphics device for the preview: {e:#}")));
+                            preview_state(false, Some(format!("{}: {e:#}", omsi_ui::tr("No graphics device for the preview"))));
                             failed = true;
                         }
                     }
@@ -723,7 +723,7 @@ fn want_preview(s: &State) {
 ///
 /// # Safety
 /// `out` points at `cap` writable bytes; `out_w` and `out_h` at writable u32s.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn openomsi_preview_frame(w: u32, h: u32, out: *mut u8, cap: usize, out_w: *mut u32, out_h: *mut u32) -> i32 {
     if let Some(s) = STATE.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
         want_preview(s);
@@ -734,9 +734,11 @@ pub unsafe extern "C" fn openomsi_preview_frame(w: u32, h: u32, out: *mut u8, ca
     }
     match rx.recv() {
         Ok(Some((pw, ph, px))) if px.len() <= cap && !out.is_null() => {
-            std::ptr::copy_nonoverlapping(px.as_ptr(), out, px.len());
-            *out_w = pw;
-            *out_h = ph;
+            unsafe {
+                std::ptr::copy_nonoverlapping(px.as_ptr(), out, px.len());
+                *out_w = pw;
+                *out_h = ph;
+            }
             1
         }
         _ => 0,
@@ -744,17 +746,17 @@ pub unsafe extern "C" fn openomsi_preview_frame(w: u32, h: u32, out: *mut u8, ca
 }
 
 /// The preview turned by a drag (points) or zoomed (a factor).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn openomsi_preview_orbit(dx: f32, dy: f32) {
     preview_send(PreviewMsg::Orbit(dx, dy));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn openomsi_preview_zoom(k: f32) {
     preview_send(PreviewMsg::Zoom(k.clamp(0.5, 2.0)));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn openomsi_preview_view(view: u32) {
     if let Some(v) = crate::launcher::showroom::PreviewView::ALL.get(view as usize) {
         preview_send(PreviewMsg::View(*v));
