@@ -148,7 +148,7 @@ fn fs_precip(in: FsIn) -> @location(0) vec4<f32> {
 
 @fragment
 fn fs_precip_test(in: FsIn) -> @location(0) vec4<f32> {
-    cutout_coverage(in.uv, in.params);
+    cutout_coverage(in.uv, in.params, 0.0);
     return pack_precip_depth(in.clip.z);
 }
 

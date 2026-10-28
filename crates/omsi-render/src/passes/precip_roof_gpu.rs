@@ -44,7 +44,7 @@ struct RoofProbeOut {
         .replace("__MATRIX__", &matrix_source)
     );
     let device = &renderer.device;
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("roof occlusion probe"), source: wgpu::ShaderSource::Wgsl(source.into()) });
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("roof occlusion probe"), source: wgpu::ShaderSource::Wgsl(roof_as_float(source).into()) });
     let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("roof probe camera"),
         entries: &[wgpu::BindGroupLayoutEntry {
@@ -146,8 +146,8 @@ fn roof_occlusion_gpu() {
     let adapters = pollster::block_on(instance.enumerate_adapters(backends));
     let adapter = adapters.first().expect("roof test graphics adapter");
     eprintln!("roof test adapter: {:?}", adapter.get_info());
-    let mut renderer = pollster::block_on(Renderer::new_with(
-        &instance,
+    let mut renderer = pollster::block_on(Renderer::new_on(
+        adapter.clone(),
         None,
         Some(wgpu::TextureFormat::Rgba8UnormSrgb),
         RenderOptions { msaa: 1, shadow_size: 256, preview_only: true, ..Default::default() },

@@ -572,6 +572,10 @@ impl Renderer {
         let rt = options.ray_tracing.then(|| rt::RayTracer::new(&device));
         let cookie_atlas = cookies::CookieAtlas::new();
         Renderer {
+            #[cfg(feature = "temporal-diagnostics")]
+            temporal: None,
+            #[cfg(feature = "neural-external")]
+            neural_external: Default::default(),
             targets: Targets {
                 scale_targets: HashMap::new(),
                 triple_targets: None,

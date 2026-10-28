@@ -10,6 +10,14 @@ default = ["test-hooks"]
 # The fault-injection hook OMSI_FAKE_GPU_ERROR (see docs/DEBUG_FLAGS.md); a build without
 # it cannot be made to fail on purpose.
 test-hooks = []
+# Engine-owned temporal buffers and visualisations; does not enable NVIDIA inference.
+temporal-diagnostics = []
+# Slow, explicit external-host prototype. No NVIDIA libraries in the normal build.
+neural-external = ["temporal-diagnostics"]
+
+[[example]]
+name = "neural-capture"
+required-features = ["neural-external"]
 
 [dependencies]
 omsi-cfg = { path = "../omsi-cfg" }

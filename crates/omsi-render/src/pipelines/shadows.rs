@@ -139,10 +139,12 @@ pub(crate) fn build(device: &wgpu::Device, scene: &SceneBase, shadow_size: u32, 
         // (left out alone where the driver fails on them: the lamps then cast no shadows,
         // `shadow_pipelines.len() > 6`)
         let tile_pipelines = optional_pipeline(device, "the lamps' shadows", || {
-            vec![make_shadow(PIPE_OPAQUE, 3), make_shadow(PIPE_ALPHA_TEST, 3)]
+            vec![make_shadow(PIPE_OPAQUE, 3, false), make_shadow(PIPE_ALPHA_TEST, 3, false)]
         });
         shadow_pipelines.extend(tile_pipelines.into_iter().flatten());
     }
+    // The precipitation camera carries its top-down matrix in the close cascade slot.
+    let precip_pipelines = [make_shadow(PIPE_OPAQUE, 2, true), make_shadow(PIPE_ALPHA_TEST, 2, true)];
     Shadows {
         view: shadow_view,
         view_far: shadow_view_far,
